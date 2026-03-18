@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Rudraksh Library",
+    "slug": "rudraksh-library",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/library.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/library.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.pankajsharma.rudrakshlibrary"
+    },
+    "web": {
+      "favicon": "./assets/library.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6d517f5b-ed6a-4408-abcf-bbd920befdb1"
+      }
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}
