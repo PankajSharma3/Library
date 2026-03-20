@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, StatusBar, Alert, Animated, Dimensions,
-  TextInput, ActivityIndicator,
+  TextInput, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useApp } from '../context/AppContext';
 
@@ -135,7 +135,7 @@ const SummaryPill = ({ label, value, valueColor }) => (
 
 // ─── Dashboard Screen ────────────────────────────────────────────
 export default function DashboardScreen({ navigation }) {
-  const { libraries, getLibraryStats, logout, userData, updateCredentials } = useApp();
+  const { libraries, getLibraryStats, logout, userData, updateCredentials, isLoading, refreshing, refreshData } = useApp();
   const headerFade = useRef(new Animated.Value(0)).current;
   const headerSlide = useRef(new Animated.Value(-20)).current;
 
@@ -148,7 +148,7 @@ export default function DashboardScreen({ navigation }) {
       Animated.timing(headerFade, { toValue: 1, duration: 500, useNativeDriver: true }),
       Animated.timing(headerSlide, { toValue: 0, duration: 500, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [isLoading]); // Re-run animation after loading completes
 
   // Keep local form in sync with global user state
   useEffect(() => {
@@ -220,6 +220,9 @@ export default function DashboardScreen({ navigation }) {
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refreshData} tintColor="#fff" />
+        }
       >
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Your Libraries</Text>

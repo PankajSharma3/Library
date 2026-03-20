@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
 
 const AppContext = createContext();
 
@@ -93,13 +94,14 @@ export const AppProvider = ({ children }) => {
   const [students, setStudents] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [userData, setUserData] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = async (showMainLoader = true) => {
+    if (showMainLoader) setIsLoading(true);
     try {
       try {
         const savedLogin = await SafeStorage.getItem('isLoggedIn');
@@ -113,9 +115,13 @@ export const AppProvider = ({ children }) => {
       }
 
       const url = `${API_BASE_URL}/libraries`;
-      const libRes = await fetch(url).catch(() => null);
+      const libRes = await fetch(url, { credentials: 'include' }).catch(() => null);
 
-      if (!libRes || !libRes.ok) return;
+      if (!libRes || !libRes.ok) {
+        if (!libRes) console.log("Network error - could not reach server");
+        else console.log("Server error:", libRes.status);
+        return;
+      }
 
       const backendLibs = await libRes.json();
 
@@ -146,13 +152,17 @@ export const AppProvider = ({ children }) => {
       const allStudents = {};
       for (const lib of fetchedLibs) {
         try {
-          const stuRes = await fetch(`${API_BASE_URL}/students/library/${lib.dbId}`);
-          if (stuRes.ok) {
-            const data = await stuRes.json();
-            allStudents[lib.id] = Array.isArray(data) ? data : [];
-          } else {
-            allStudents[lib.id] = [];
-          }
+      const stuRes = await fetch(`${API_BASE_URL}/students/library/${lib.dbId}`, { credentials: 'include' });
+      if (stuRes.status === 401) {
+        logout();
+        return;
+      }
+      if (stuRes.ok) {
+        const data = await stuRes.json();
+        allStudents[lib.id] = Array.isArray(data) ? data : [];
+      } else {
+        allStudents[lib.id] = [];
+      }
         } catch (err) {
           allStudents[lib.id] = [];
         }
@@ -177,7 +187,13 @@ export const AppProvider = ({ children }) => {
       console.log('Sync Error:', e.message);
     } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const refreshData = async () => {
+    setRefreshing(true);
+    await loadData(false);
   };
 
   const login = async (username, password) => {
@@ -239,6 +255,7 @@ export const AppProvider = ({ children }) => {
     const response = await fetch(`${API_BASE_URL}/students`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(payload),
     });
 
@@ -255,6 +272,7 @@ export const AppProvider = ({ children }) => {
   const deleteStudent = async (libraryId, studentId) => {
     const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
       method: 'DELETE',
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -270,6 +288,7 @@ export const AppProvider = ({ children }) => {
     const response = await fetch(`${API_BASE_URL}/students/${studentId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(updatedData),
     });
 
@@ -287,6 +306,7 @@ export const AppProvider = ({ children }) => {
     const response = await fetch(`${API_BASE_URL}/students/${studentId}/renew`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(renewalData),
     });
 
@@ -306,6 +326,7 @@ export const AppProvider = ({ children }) => {
     const response = await fetch(`${API_BASE_URL}/auth/update`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ 
         userId: userData._id, 
         newUsername, 
@@ -314,8 +335,18 @@ export const AppProvider = ({ children }) => {
     });
 
     const result = await response.json();
+    if (response.status === 401) {
+      logout();
+      throw new Error("Session expired");
+    }
     if (!response.ok) {
       throw new Error(result.message || "Failed to update credentials");
+    }
+
+    if (newPassword || (newUsername && newUsername !== userData.username)) {
+      Alert.alert('Security Alert', 'Credentials changed. Please login again with your new details.');
+      await logout();
+      return result;
     }
 
     if (result.user) {
@@ -344,19 +375,9 @@ export const AppProvider = ({ children }) => {
 
   return (
     <AppContext.Provider value={{
-      isLoggedIn,
-      isLoading,
-      libraries,
-      students,
-      login,
-      logout,
-      addStudent,
-      updateStudent,
-      deleteStudent,
-      renewStudent,
-      getLibraryStats,
-      userData,
-      updateCredentials,
+      isLoggedIn, userData, libraries, students, isLoading, refreshing,
+      login, logout, updateCredentials, addStudent, updateStudent, deleteStudent,
+      getLibraryStats, loadData, refreshData, renewStudent
     }}>
       {children}
     </AppContext.Provider>

@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, TextInput, Modal, FlatList, ActivityIndicator,
-  useWindowDimensions,
+  useWindowDimensions, Platform, RefreshControl,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useApp } from '../context/AppContext';
 import { formatDate } from '../utils/dateUtils';
 
@@ -89,7 +90,7 @@ const RenewAmountModal = ({ visible, onClose, onConfirm }) => {
   );
 };
 
-const StudentDetailModal = ({ student, visible, onClose }) => {
+const StudentDetailModal = ({ student, visible, onClose, navigation }) => {
   if (!student) return null;
   const fields = [
     { label: 'Name', value: student.name },
@@ -97,13 +98,15 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
     { label: 'Date of Birth', value: student.dob },
     { label: 'Gender', value: student.gender },
     { label: 'Mobile No.', value: student.mobile },
-    { label: 'Address (Local)', value: student.addressLocal },
-    { label: 'Address (Permanent)', value: student.addressPermanent },
+    { label: 'Guardian Mobile', value: student.mobileGuardian },
+    { label: 'Local Address', value: student.addressLocal },
+    { label: 'Permanent Address', value: student.addressPermanent },
     { label: 'Identity Proof', value: student.identityProof },
     { label: 'Preparation For', value: student.preparationFor },
     { label: 'Coaching / Institute', value: student.coachingInstitute },
     { label: 'Joining Date', value: student.joiningDate },
     { label: 'Expiry Date', value: student.expiryDate },
+    { label: 'Remarks', value: student.remarks },
     { label: 'Plan Type', value: student.slot === 'FULL_DAY' ? 'Full Day' : 'Half Day' },
     { label: 'Shift', value: student.shift },
     { label: 'Seat Number', value: `#${student.seatNumber}` },
@@ -114,6 +117,9 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
   const { updateStudent, renewStudent } = useApp();
   const [updating, setUpdating] = useState(false);
   const [showAmountModal, setShowAmountModal] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [renewalDate, setRenewalDate] = useState(new Date());
+  const [pendingStatus, setPendingStatus] = useState('FULLY_PAID');
 
   const handleMarkAsPaid = async () => {
     setUpdating(true);
@@ -128,10 +134,19 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
     }
   };
 
-  const handleRenewal = (status, amount = 0) => {
+  const handleRenewalStart = (status) => {
+    setPendingStatus(status);
+    const currentExpiry = new Date(student.expiryDate);
+    const nextExpiry = new Date(currentExpiry);
+    nextExpiry.setDate(currentExpiry.getDate() + 30);
+    setRenewalDate(nextExpiry);
+    setShowDatePicker(true);
+  };
+
+  const proceedWithRenewal = (status, date, amount = 0) => {
     Alert.alert(
       'Confirm Renewal',
-      `Extend membership by 30 days starting from ${formatDate(student.expiryDate)}?`,
+      `Extend membership until ${formatDate(date.toISOString().split('T')[0])}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -139,8 +154,12 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
           onPress: async () => {
             setUpdating(true);
             try {
-              await renewStudent(student._id, { feeStatus: status, paidAmount: amount });
-              Alert.alert('Success ✅', 'Membership extended for 30 days');
+              await renewStudent(student._id, { 
+                feeStatus: status, 
+                paidAmount: amount,
+                expiryDate: date.toISOString().split('T')[0]
+              });
+              Alert.alert('Success ✅', 'Membership extended successfully');
               onClose();
             } catch (e) {
               Alert.alert('Error', e.message || 'Renewal failed');
@@ -158,10 +177,24 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
       <View style={styles.modalOverlay}>
         <View style={styles.detailModal}>
           <View style={styles.detailHeader}>
-            <Text style={styles.detailTitle}>Registration Details</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Text style={styles.closeText}>✕</Text>
-            </TouchableOpacity>
+            <View>
+              <Text style={styles.detailTitle}>Registration Details</Text>
+              <Text style={styles.detailId}>ID: {student._id?.slice(-6).toUpperCase()}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity 
+                style={[styles.closeBtn, { backgroundColor: '#e8eaf6' }]} 
+                onPress={() => {
+                  onClose();
+                  navigation.navigate('AddStudent', { libraryId: student.libraryId, student });
+                }}
+              >
+                <Text style={{ fontSize: 14 }}>✏️</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <Text style={styles.closeText}>✕</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
             {fields.map((f, i) => (
@@ -188,13 +221,13 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
               <View style={styles.renewalRow}>
                 <TouchableOpacity 
                   style={[styles.renewBtn, { backgroundColor: '#1a237e' }]} 
-                  onPress={() => handleRenewal('FULLY_PAID')}
+                  onPress={() => handleRenewalStart('FULLY_PAID')}
                 >
                   <Text style={styles.renewBtnText}>Full Pay Renewal</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={[styles.renewBtn, { backgroundColor: '#e8eaf6' }]} 
-                  onPress={() => setShowAmountModal(true)}
+                  onPress={() => handleRenewalStart('PARTIALLY_PAID')}
                 >
                   <Text style={[styles.renewBtnText, { color: '#1a237e' }]}>Partial Pay</Text>
                 </TouchableOpacity>
@@ -206,10 +239,28 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
         </View>
       </View>
 
+      {showDatePicker && (
+        <DateTimePicker
+          value={renewalDate}
+          mode="date"
+          onChange={(event, date) => {
+            setShowDatePicker(false);
+            if (date) {
+              if (pendingStatus === 'PARTIALLY_PAID') {
+                setRenewalDate(date);
+                setShowAmountModal(true);
+              } else {
+                proceedWithRenewal('FULLY_PAID', date);
+              }
+            }
+          }}
+        />
+      )}
+
       <RenewAmountModal 
         visible={showAmountModal} 
         onClose={() => setShowAmountModal(false)}
-        onConfirm={(amt) => handleRenewal('PARTIALLY_PAID', amt)}
+        onConfirm={(amt) => proceedWithRenewal('PARTIALLY_PAID', renewalDate, amt)}
       />
     </Modal>
   );
@@ -217,7 +268,7 @@ const StudentDetailModal = ({ student, visible, onClose }) => {
 
 export default function LibraryDetailScreen({ route, navigation }) {
   const { libraryId } = route.params;
-  const { libraries, students, deleteStudent, getLibraryStats } = useApp();
+  const { libraries, students, deleteStudent, getLibraryStats, isLoading, refreshing, refreshData } = useApp();
   const { width } = useWindowDimensions();
 
   const numColumns = width > 900 ? 3 : width > 600 ? 2 : 1;
@@ -275,8 +326,31 @@ export default function LibraryDetailScreen({ route, navigation }) {
       return 'FREE';
     };
 
+    const handleSeatPress = (seatNumber) => {
+      const occupants = libStudents.filter(s => s.seatNumber === seatNumber);
+      if (occupants.length === 0) {
+        Alert.alert(`Seat #${seatNumber}`, "This seat is currently available.");
+      } else if (occupants.length === 1) {
+        setSelectedStudent(occupants[0]);
+      } else {
+        // Show choice modal for partial occupancy
+        Alert.alert(
+          `Seat #${seatNumber}`,
+          "Select student to view details:",
+          occupants.map(s => ({
+            text: `${s.name} (${s.shift})`,
+            onPress: () => setSelectedStudent(s)
+          })).concat([{ text: 'Cancel', style: 'cancel' }])
+        );
+      }
+    };
+
     return (
-      <ScrollView>
+      <ScrollView
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refreshData} />
+        }
+      >
         {Object.entries(zones).map(([zoneKey, zone]) => (
           <View key={zoneKey} style={styles.zoneContainer}>
             <Text style={styles.zoneTitle}>{zone.label}</Text>
@@ -297,11 +371,16 @@ export default function LibraryDetailScreen({ route, navigation }) {
                 }
 
                 return (
-                  <View key={num} style={[styles.seat, seatStyle]}>
+                  <TouchableOpacity 
+                    key={num} 
+                    style={[styles.seat, seatStyle]}
+                    onPress={() => handleSeatPress(num)}
+                    activeOpacity={0.7}
+                  >
                     <Text style={[styles.seatNum, textStyle]}>{num}</Text>
                     {status === 'OCC_MORNING' && <Text style={styles.tinyShift}>M</Text>}
                     {status === 'OCC_EVENING' && <Text style={styles.tinyShift}>E</Text>}
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -319,6 +398,14 @@ export default function LibraryDetailScreen({ route, navigation }) {
       </ScrollView>
     );
   };
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#1a237e" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -394,6 +481,9 @@ export default function LibraryDetailScreen({ route, navigation }) {
               numColumns={numColumns}
               key={numColumns}
               columnWrapperStyle={numColumns > 1 ? { gap: 12 } : null}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={refreshData} />
+              }
               renderItem={({ item }) => (
                 <StudentCard
                   student={item}
@@ -414,6 +504,7 @@ export default function LibraryDetailScreen({ route, navigation }) {
         student={selectedStudent}
         visible={!!selectedStudent}
         onClose={() => setSelectedStudent(null)}
+        navigation={navigation}
       />
     </View>
   );
@@ -497,6 +588,7 @@ const styles = StyleSheet.create({
   detailModal: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
   detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   detailTitle: { fontSize: 20, fontWeight: '700', color: '#1a237e' },
+  detailId: { fontSize: 10, color: '#aaa', fontWeight: '800', letterSpacing: 1 },
   closeBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center' },
   closeText: { fontSize: 16, color: '#424242' },
   detailRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },

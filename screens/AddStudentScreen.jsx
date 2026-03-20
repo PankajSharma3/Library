@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ScrollView, Alert, Modal, ActivityIndicator, Platform,
@@ -131,28 +131,43 @@ const SeatPickerModal = ({ visible, onClose, onSelect, library, selectedShift })
 };
 
 export default function AddStudentScreen({ route, navigation }) {
-  const { libraryId } = route.params;
-  const { libraries, addStudent } = useApp();
+  const { libraryId, student } = route.params;
+  const isEdit = !!student;
+  const { libraries, addStudent, updateStudent } = useApp();
   const library = libraries.find(l => l.id === libraryId);
 
   const [form, setForm] = useState({
-    name: '',
-    fatherName: '',
-    dob: '',
-    gender: 'Male',
-    mobile: '',
-    addressLocal: '',
-    addressPermanent: '',
-    identityProof: '',
-    preparationFor: '',
-    coachingInstitute: '',
-    slot: 'FULL_DAY', 
-    shift: 'FULL_DAY',
-    joiningDate: new Date().toISOString().split('T')[0],
-    feeStatus: 'FULLY_PAID', 
-    paidAmount: '',
-    seatNumber: '',
+    name: student?.name || '',
+    fatherName: student?.fatherName || '',
+    dob: student?.dob || '',
+    gender: student?.gender || 'Male',
+    mobile: student?.mobile || '',
+    mobileGuardian: student?.mobileGuardian || '',
+    remarks: student?.remarks || '',
+    addressLocal: student?.addressLocal || '',
+    addressPermanent: student?.addressPermanent || '',
+    identityProof: student?.identityProof || '',
+    preparationFor: student?.preparationFor || '',
+    coachingInstitute: student?.coachingInstitute || '',
+    slot: student?.slot || 'FULL_DAY', 
+    shift: student?.shift || 'FULL_DAY',
+    joiningDate: student?.joiningDate || new Date().toISOString().split('T')[0],
+    expiryDate: student?.expiryDate || '',
+    feeStatus: student?.feeStatus || 'FULLY_PAID', 
+    paidAmount: student?.paidAmount?.toString() || '',
+    seatNumber: student?.seatNumber?.toString() || '',
   });
+
+  // Calculate default expiry (30 days after join) if empty
+  useEffect(() => {
+    if (!form.expiryDate && form.joiningDate) {
+      const join = new Date(form.joiningDate);
+      const expiry = new Date(join);
+      expiry.setDate(join.getDate() + 30);
+      setForm(f => ({ ...f, expiryDate: expiry.toISOString().split('T')[0] }));
+    }
+  }, [form.joiningDate]);
+
   const [seatModalVisible, setSeatModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -165,6 +180,12 @@ export default function AddStudentScreen({ route, navigation }) {
     if (key === 'shift') {
       newForm.seatNumber = ''; 
     }
+    if (key === 'joiningDate') {
+      const join = new Date(val);
+      const expiry = new Date(join);
+      expiry.setDate(join.getDate() + 30);
+      newForm.expiryDate = expiry.toISOString().split('T')[0];
+    }
     return newForm;
   });
 
@@ -176,20 +197,27 @@ export default function AddStudentScreen({ route, navigation }) {
 
     setSaving(true);
     try {
-      // Sanitize payload: convert numbers and handle empty strings
       const payload = {
         ...form,
         seatNumber: Number(form.seatNumber),
         paidAmount: form.paidAmount ? Number(form.paidAmount) : 0,
-        dob: form.dob || undefined, // Avoid Mongoose casting error with empty string
+        dob: form.dob || undefined,
+        expiryDate: form.expiryDate,
       };
 
-      await addStudent(libraryId, payload);
-      Alert.alert('Success ✅', 'Student registered successfully', [
-        { text: 'OK', onPress: () => navigation.goBack() }
-      ]);
+      if (isEdit) {
+        await updateStudent(student._id, payload);
+        Alert.alert('Success ✅', 'Student updated successfully', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      } else {
+        await addStudent(libraryId, payload);
+        Alert.alert('Success ✅', 'Student registered successfully', [
+          { text: 'OK', onPress: () => navigation.goBack() }
+        ]);
+      }
     } catch (e) {
-      Alert.alert('Registration Error', e.message || 'Something went wrong');
+      Alert.alert(isEdit ? 'Update Error' : 'Registration Error', e.message || 'Something went wrong');
     } finally {
       setSaving(false);
     }
@@ -201,7 +229,7 @@ export default function AddStudentScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Registration Form</Text>
+        <Text style={styles.headerTitle}>{isEdit ? 'Edit Information' : 'Registration Form'}</Text>
         <View style={{ width: 60 }} />
       </View>
 
@@ -232,6 +260,10 @@ export default function AddStudentScreen({ route, navigation }) {
             <Input value={form.mobile} onChangeText={v => update('mobile', v)} placeholder="10-digit mobile" keyboardType="phone-pad" />
           </FormField>
 
+          <FormField label="Guardian Mobile No.">
+            <Input value={form.mobileGuardian} onChangeText={v => update('mobileGuardian', v)} placeholder="Emergency contact" keyboardType="phone-pad" />
+          </FormField>
+
           <FormField label="Local Address">
             <Input value={form.addressLocal} onChangeText={v => update('addressLocal', v)} placeholder="Current local address" multiline />
           </FormField>
@@ -257,7 +289,18 @@ export default function AddStudentScreen({ route, navigation }) {
           </View>
 
           <Text style={styles.sectionDivider}>SLOT & SEAT BOOKING</Text>
-          <DatePickerField label="Joining Date" value={form.joiningDate} onChange={v => update('joiningDate', v)} required />
+          <View style={styles.row}>
+            <View style={{ flex: 1, marginRight: 10 }}>
+              <DatePickerField label="Joining Date" value={form.joiningDate} onChange={v => update('joiningDate', v)} required />
+            </View>
+            <View style={{ flex: 1 }}>
+              <DatePickerField label="Expiry Date" value={form.expiryDate} onChange={v => update('expiryDate', v)} required />
+            </View>
+          </View>
+
+          <FormField label="Remarks / Special Note">
+            <Input value={form.remarks} onChangeText={v => update('remarks', v)} placeholder="Extra information" multiline />
+          </FormField>
           
           <OptionGroup 
             label="Plan Duration" 
