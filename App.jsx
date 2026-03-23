@@ -8,11 +8,16 @@ import LoginScreen from './screens/LoginScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import LibraryDetailScreen from './screens/LibraryDetailScreen';
 import AddStudentScreen from './screens/AddStudentScreen';
+import LoadingScreen from './components/LoadingScreen';
 
 const Stack = createNativeStackNavigator();
 
 function Navigation() {
-  const { isLoggedIn } = useApp();
+  const { isLoggedIn, isLoading } = useApp();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
     <NavigationContainer>

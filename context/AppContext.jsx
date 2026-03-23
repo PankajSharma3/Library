@@ -117,9 +117,21 @@ export const AppProvider = ({ children }) => {
       const url = `${API_BASE_URL}/libraries`;
       const libRes = await fetch(url, { credentials: 'include' }).catch(() => null);
 
-      if (!libRes || !libRes.ok) {
-        if (!libRes) console.log("Network error - could not reach server");
-        else console.log("Server error:", libRes.status);
+      if (!libRes) {
+        console.log("Network error - could not reach server");
+        setIsLoading(false);
+        return;
+      }
+
+      if (libRes.status === 401) {
+        console.log("Session expired or invalid - logging out");
+        await logout();
+        return;
+      }
+
+      if (!libRes.ok) {
+        console.log("Server error:", libRes.status);
+        setIsLoading(false);
         return;
       }
 
@@ -197,6 +209,7 @@ export const AppProvider = ({ children }) => {
   };
 
   const login = async (username, password) => {
+    setIsLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
@@ -222,6 +235,8 @@ export const AppProvider = ({ children }) => {
       return { success: true };
     } catch (e) {
       return { success: false, error: 'Could not connect to server' };
+    } finally {
+      setIsLoading(false);
     }
   };
 
